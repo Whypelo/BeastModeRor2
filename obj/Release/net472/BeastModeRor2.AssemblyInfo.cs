@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BeastModeRor2")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+66faa7c5b33871a15f0c696195c2973d2e38a41b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e395d4e1ce7a44540874cd03ec0918936ef5a137")]
 [assembly: System.Reflection.AssemblyProductAttribute("BeastModeRor2")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BeastModeRor2")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
