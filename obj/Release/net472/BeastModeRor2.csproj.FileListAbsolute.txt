@@ -1,0 +1,10 @@
+D:\BeastModeRor2\BeastModeRor2\obj\Release\net472\BeastModeRor2.csproj.AssemblyReference.cache
+D:\BeastModeRor2\BeastModeRor2\obj\Release\net472\BeastModeRor2.GeneratedMSBuildEditorConfig.editorconfig
+D:\BeastModeRor2\BeastModeRor2\obj\Release\net472\BeastModeRor2.AssemblyInfoInputs.cache
+D:\BeastModeRor2\BeastModeRor2\obj\Release\net472\BeastModeRor2.AssemblyInfo.cs
+D:\BeastModeRor2\BeastModeRor2\obj\Release\net472\BeastModeRor2.csproj.CoreCompileInputs.cache
+D:\BeastModeRor2\BeastModeRor2\obj\Release\net472\BeastModeRor2.sourcelink.json
+D:\BeastModeRor2\BeastModeRor2\bin\Release\net472\BeastModeRor2.dll
+D:\BeastModeRor2\BeastModeRor2\bin\Release\net472\BeastModeRor2.pdb
+D:\BeastModeRor2\BeastModeRor2\obj\Release\net472\BeastModeRor2.dll
+D:\BeastModeRor2\BeastModeRor2\obj\Release\net472\BeastModeRor2.pdb

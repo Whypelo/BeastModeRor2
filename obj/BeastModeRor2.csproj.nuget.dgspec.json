@@ -1,0 +1,64 @@
+{
+  "format": 1,
+  "restore": {
+    "D:\\BeastModeRor2\\BeastModeRor2\\BeastModeRor2.csproj": {}
+  },
+  "projects": {
+    "D:\\BeastModeRor2\\BeastModeRor2\\BeastModeRor2.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "D:\\BeastModeRor2\\BeastModeRor2\\BeastModeRor2.csproj",
+        "projectName": "BeastModeRor2",
+        "projectPath": "D:\\BeastModeRor2\\BeastModeRor2\\BeastModeRor2.csproj",
+        "packagesPath": "C:\\Users\\KennXic\\.nuget\\packages\\",
+        "outputPath": "D:\\BeastModeRor2\\BeastModeRor2\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\KennXic\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net472"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net472": {
+            "framework": "net472",
+            "targetAlias": "net472",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.400"
+      },
+      "frameworks": {
+        "net472": {
+          "framework": "net472",
+          "targetAlias": "net472",
+          "dependencies": {
+            "Microsoft.NETFramework.ReferenceAssemblies": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[1.0.3, )",
+              "autoReferenced": true
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.402\\RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

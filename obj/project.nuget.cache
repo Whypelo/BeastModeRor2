@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "jCSO7xHt8sU=",
+  "success": true,
+  "projectFilePath": "D:\\BeastModeRor2\\BeastModeRor2\\BeastModeRor2.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\KennXic\\.nuget\\packages\\microsoft.netframework.referenceassemblies\\1.0.3\\microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
+    "C:\\Users\\KennXic\\.nuget\\packages\\microsoft.netframework.referenceassemblies.net472\\1.0.3\\microsoft.netframework.referenceassemblies.net472.1.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}
