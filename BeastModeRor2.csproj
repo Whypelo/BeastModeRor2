@@ -18,5 +18,6 @@
     <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(RiskOfRain2Dir)\Risk of Rain 2_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="com.unity.multiplayer-hlapi.Runtime"><HintPath>$(RiskOfRain2Dir)\Risk of Rain 2_Data\Managed\com.unity.multiplayer-hlapi.Runtime.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="KinematicCharacterController"><HintPath>$(RiskOfRain2Dir)\Risk of Rain 2_Data\Managed\KinematicCharacterController.dll</HintPath><Private>false</Private></Reference>
+	<Reference Include="Newtonsoft.Json"><HintPath>$(RiskOfRain2Dir)\Risk of Rain 2_Data\Managed\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>
