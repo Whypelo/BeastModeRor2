@@ -25,9 +25,6 @@ namespace BeastModeRor2
     public class BeastModePlugin : BaseUnityPlugin
     {
         internal static ManualLogSource Log;
-        public const int OVERKILL_THRESHOLD = 3;
-        public const float OVERKILL_DAMAGE_MULT = 1.5f;
-        public const float OVERKILL_SPEED_MULT = 1.2f;
         public const float SLIDE_SPEED = 20f;
         public const float SLIDE_DURATION = 0.4f;
 
@@ -66,8 +63,6 @@ namespace BeastModeRor2
         private static Dictionary<string, ConfigEntry<float>> configUpEntries = new Dictionary<string, ConfigEntry<float>>();
         private static Dictionary<string, ConfigEntry<float>> configForwardEntries = new Dictionary<string, ConfigEntry<float>>();
 
-        internal int killsWithoutDamage = 0;
-        internal bool isOverkillActive = false;
         private float slideTimer = 0f;
         private bool isSliding = false;
         internal CharacterBody playerBody;
@@ -192,59 +187,6 @@ namespace BeastModeRor2
             Chat.AddMessage($"<color=#FFD700>[BeastMode]</color> {message}");
         }
 
-        internal void ActivateOverkill()
-        {
-            if (playerBody == null) return;
-            isOverkillActive = true;
-            
-            playerBody.baseDamage *= OVERKILL_DAMAGE_MULT;
-            playerBody.baseMoveSpeed *= OVERKILL_SPEED_MULT;
-            
-            playerBody.RecalculateStats();
-            
-            SendChatMessage("<color=#FF4444><b>⚡ OVERKILL ACTIVATED! ⚡</b></color>");
-            SendChatMessage("<color=#FF8888>+50% Damage | +20% Speed</color>");
-        }
-
-        internal void DeactivateOverkill()
-        {
-            if (!isOverkillActive || playerBody == null) return;
-            isOverkillActive = false;
-            
-            playerBody.baseDamage /= OVERKILL_DAMAGE_MULT;
-            playerBody.baseMoveSpeed /= OVERKILL_SPEED_MULT;
-            
-            playerBody.RecalculateStats();
-            killsWithoutDamage = 0;
-            
-            SendChatMessage("<color=#888888>Overkill deactivated. Stats normalized.</color>");
-        }
-
-        // === НОВОЕ: СООБЩЕНИЕ О ПРОГРЕССЕ СЕРИИ УБИЙСТВ ===
-        internal void ReportKillStreak()
-        {
-            if (killsWithoutDamage >= OVERKILL_THRESHOLD) return; // Уже активирован
-            
-            string progress = "";
-            string color = "#AAAAAA";
-            
-            if (killsWithoutDamage == 1)
-            {
-                progress = "Kill streak started!";
-                color = "#AAAAAA";
-            }
-            else if (killsWithoutDamage == 2)
-            {
-                progress = $"Kill streak: <b>{killsWithoutDamage}/{OVERKILL_THRESHOLD}</b> - Almost there!";
-                color = "#FFAA00";
-            }
-            
-            if (!string.IsNullOrEmpty(progress))
-            {
-                SendChatMessage($"<color={color}>{progress}</color>");
-            }
-        }
-
         public void Update()
         {
             if (Input.GetKeyDown(KeyCode.LeftBracket))
@@ -325,7 +267,6 @@ namespace BeastModeRor2
 
             if (playerBody == null || !playerBody.isPlayerControlled) return;
 
-            // === ИЗМЕНЕНО: СЛАЙД ТЕПЕРЬ НА ALT ===
             if (Input.GetKeyDown(KeyCode.LeftAlt) && !isSliding)
             {
                 StartSlide();
@@ -356,6 +297,56 @@ namespace BeastModeRor2
 
                 motor.velocity += slideDir * SLIDE_SPEED;
                 SendChatMessage("<color=#88FFFF>⚡ Slide!</color>");
+                
+                // === НОВОЕ: ЗАПУСК АНИМАЦИИ СЛАЙДА ===
+                PlaySlideAnimation();
+            }
+        }
+
+        // === НОВОЕ: ВОСПРОИЗВЕДЕНИЕ АНИМАЦИИ СЛАЙДА ===
+        private void PlaySlideAnimation()
+        {
+            if (playerBody == null) return;
+            
+            Transform modelTransform = playerBody.modelLocator?.modelTransform;
+            if (modelTransform == null) return;
+            
+            Animator animator = modelTransform.GetComponent<Animator>();
+            if (animator == null)
+            {
+                animator = modelTransform.GetComponentInChildren<Animator>();
+            }
+            
+            if (animator != null)
+            {
+                // Пробуем разные имена анимаций слайда
+                string[] slideAnimNames = new string[]
+                {
+                    "Slide",
+                    "slide",
+                    "Dodge",
+                    "dodge",
+                    "Roll",
+                    "roll",
+                    "DodgeForward",
+                    "Evade"
+                };
+                
+                foreach (string animName in slideAnimNames)
+                {
+                    // Проверяем, существует ли такая анимация
+                    foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
+                    {
+                        if (clip.name == animName)
+                        {
+                            animator.Play(animName);
+                            Log.LogInfo($"[BeastMode] Playing slide animation: {animName}");
+                            return;
+                        }
+                    }
+                }
+                
+                Log.LogWarning($"[BeastMode] No slide animation found for {currentCharacterName}");
             }
         }
     }
@@ -388,77 +379,11 @@ namespace BeastModeRor2
         }
     }
 
-    public static class LastAttackerTracker
-    {
-        public static Dictionary<HealthComponent, GameObject> LastAttackers = new Dictionary<HealthComponent, GameObject>();
-    }
-
-    [HarmonyPatch(typeof(HealthComponent), "TakeDamage")]
-    public static class HealthComponentTakeDamagePatch
-    {
-        static void Postfix(HealthComponent __instance, DamageInfo damageInfo)
-        {
-            var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
-            if (plugin == null || plugin.playerBody == null) return;
-            
-            if (damageInfo.attacker != null)
-            {
-                LastAttackerTracker.LastAttackers[__instance] = damageInfo.attacker;
-            }
-            
-            if (__instance.body != plugin.playerBody) return;
-            if (damageInfo.damage <= 0 || damageInfo.attacker == __instance.gameObject) return;
-
-            plugin.killsWithoutDamage = 0;
-            
-            if (plugin.isOverkillActive)
-            {
-                plugin.DeactivateOverkill();
-            }
-            else
-            {
-                // === НОВОЕ: СООБЩЕНИЕ О СБРОСЕ СЕРИИ ===
-                plugin.SendChatMessage("<color=#FF6666>❌ Kill streak reset!</color>");
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(HealthComponent), "Die")]
-    public static class HealthComponentDiePatch
-    {
-        static void Postfix(HealthComponent __instance, bool noCorpse)
-        {
-            var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
-            if (plugin == null || plugin.playerBody == null) return;
-            
-            if (__instance.body != null && __instance.body.isPlayerControlled) return;
-            
-            if (LastAttackerTracker.LastAttackers.TryGetValue(__instance, out GameObject attacker))
-            {
-                if (attacker == plugin.playerBody.gameObject)
-                {
-                    plugin.killsWithoutDamage++;
-                    
-                    // === НОВОЕ: СООБЩЕНИЕ О ПРОГРЕССЕ ===
-                    plugin.ReportKillStreak();
-                    
-                    if (plugin.killsWithoutDamage >= BeastModePlugin.OVERKILL_THRESHOLD && !plugin.isOverkillActive)
-                    {
-                        plugin.ActivateOverkill();
-                    }
-                }
-                
-                LastAttackerTracker.LastAttackers.Remove(__instance);
-            }
-        }
-    }
-
     [HarmonyPatch(typeof(CameraRigController), "LateUpdate")]
     public static class FirstPersonCameraPatch
     {
         private static bool headRenderersDisabled = false;
         private static CharacterBody lastProcessedBody = null;
-        private static bool headFound = false;
 
         static void Postfix(CameraRigController __instance)
         {
@@ -476,7 +401,6 @@ namespace BeastModeRor2
             if (lastProcessedBody != body)
             {
                 headRenderersDisabled = false;
-                headFound = false;
             }
 
             Transform head = FindHeadBone(model, body);
@@ -490,7 +414,6 @@ namespace BeastModeRor2
             
             if (head != null)
             {
-                headFound = true;
                 headPos = head.position 
                         + head.up * settings.upOffset
                         + cam.transform.forward * settings.forwardOffset;
