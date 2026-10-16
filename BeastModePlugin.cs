@@ -8,7 +8,6 @@ using System.Collections.Generic;
 
 namespace BeastModeRor2
 {
-    // Класс настроек камеры для одного персонажа
     public class CameraSettings
     {
         public float upOffset;
@@ -32,27 +31,38 @@ namespace BeastModeRor2
         public const float SLIDE_SPEED = 20f;
         public const float SLIDE_DURATION = 0.4f;
 
-        // Настройки FOV
         internal static ConfigEntry<float> ConfigFOV;
         public const float FOV_MIN = 30f;
         public const float FOV_MAX = 120f;
         public const float FOV_STEP = 5f;
         public const float FOV_DEFAULT = 80f;
 
-        // Настройки камеры
-        public const float CAM_STEP = 0.05f;           // Обычный шаг
-        public const float CAM_STEP_FINE = 0.01f;      // Точный шаг (с Shift)
-        public const float CAM_UP_DEFAULT = 0.05f;
-        public const float CAM_FORWARD_DEFAULT = 0.15f;
+        public const float CAM_STEP = 0.05f;
+        public const float CAM_STEP_FINE = 0.01f;
         public const float CAM_UP_MIN = -1f;
         public const float CAM_UP_MAX = 2f;
         public const float CAM_FORWARD_MIN = -0.5f;
         public const float CAM_FORWARD_MAX = 1f;
 
-        // Словарь настроек камеры для каждого персонажа (ключ - имя body)
+        internal static readonly Dictionary<string, CameraSettings> DefaultCharacterSettings = 
+            new Dictionary<string, CameraSettings>
+        {
+            { "BANDIT2_BODY_NAME",   new CameraSettings(0.25f,  0.35f) },
+            { "COMMANDO_BODY_NAME",  new CameraSettings(0.30f,  0.15f) },
+            { "CROCO_BODY_NAME",     new CameraSettings(0.55f,  0.70f) },
+            { "ENGI_BODY_NAME",      new CameraSettings(0.00f,  0.10f) },
+            { "HUNTRESS_BODY_NAME",  new CameraSettings(0.05f,  0.25f) },
+            { "LOADER_BODY_NAME",    new CameraSettings(0.05f,  0.15f) },
+            { "MAGE_BODY_NAME",      new CameraSettings(0.25f,  0.10f) },
+            { "MERC_BODY_NAME",      new CameraSettings(0.80f,  0.85f) },
+            { "SEEKER_BODY_NAME",    new CameraSettings(0.05f,  0.15f) },
+            { "TOOLBOT_BODY_NAME",   new CameraSettings(1.20f, -0.30f) },
+        };
+
+        public const float CAM_UP_DEFAULT = 0.05f;
+        public const float CAM_FORWARD_DEFAULT = 0.15f;
+
         internal static Dictionary<string, CameraSettings> characterCameraSettings = new Dictionary<string, CameraSettings>();
-        
-        // Хранилище конфигов для каждого персонажа (чтобы BepInEx сохранял их)
         private static Dictionary<string, ConfigEntry<float>> configUpEntries = new Dictionary<string, ConfigEntry<float>>();
         private static Dictionary<string, ConfigEntry<float>> configForwardEntries = new Dictionary<string, ConfigEntry<float>>();
 
@@ -84,7 +94,6 @@ namespace BeastModeRor2
             Log.LogInfo($"[BeastMode] Beast Mode loaded. FOV: {ConfigFOV.Value}");
         }
 
-        // === ПОЛУЧЕНИЕ ИЛИ СОЗДАНИЕ НАСТРОЕК ДЛЯ ПЕРСОНАЖА ===
         internal static CameraSettings GetOrCreateSettings(string characterName, ConfigFile configFile)
         {
             if (characterCameraSettings.TryGetValue(characterName, out CameraSettings existing))
@@ -92,10 +101,14 @@ namespace BeastModeRor2
                 return existing;
             }
 
-            // Создаём новые настройки
-            CameraSettings settings = new CameraSettings(CAM_UP_DEFAULT, CAM_FORWARD_DEFAULT);
+            CameraSettings defaults;
+            if (!DefaultCharacterSettings.TryGetValue(characterName, out defaults))
+            {
+                defaults = new CameraSettings(CAM_UP_DEFAULT, CAM_FORWARD_DEFAULT);
+            }
 
-            // Пытаемся загрузить из конфига
+            CameraSettings settings = new CameraSettings(defaults.upOffset, defaults.forwardOffset);
+
             string safeName = SanitizeConfigKey(characterName);
             
             if (!configUpEntries.TryGetValue(safeName, out ConfigEntry<float> upEntry))
@@ -103,9 +116,9 @@ namespace BeastModeRor2
                 upEntry = configFile.Bind<float>(
                     $"Character.{safeName}",
                     "UpOffset",
-                    CAM_UP_DEFAULT,
+                    defaults.upOffset,
                     new ConfigDescription(
-                        $"Смещение камеры вверх для персонажа {characterName}. Стрелки ↑↓ в игре.",
+                        $"Смещение камеры вверх для {characterName}. Стрелки ↑↓ в игре.",
                         new AcceptableValueRange<float>(CAM_UP_MIN, CAM_UP_MAX)
                     )
                 );
@@ -117,9 +130,9 @@ namespace BeastModeRor2
                 forwardEntry = configFile.Bind<float>(
                     $"Character.{safeName}",
                     "ForwardOffset",
-                    CAM_FORWARD_DEFAULT,
+                    defaults.forwardOffset,
                     new ConfigDescription(
-                        $"Смещение камеры вперёд для персонажа {characterName}. Стрелки ←→ в игре.",
+                        $"Смещение камеры вперёд для {characterName}. Стрелки ←→ в игре.",
                         new AcceptableValueRange<float>(CAM_FORWARD_MIN, CAM_FORWARD_MAX)
                     )
                 );
@@ -130,18 +143,16 @@ namespace BeastModeRor2
             settings.forwardOffset = forwardEntry.Value;
 
             characterCameraSettings[characterName] = settings;
-            Log.LogInfo($"[BeastMode] Created camera settings for {characterName}: Up={settings.upOffset}, Forward={settings.forwardOffset}");
+            Log.LogInfo($"[BeastMode] Loaded settings for {characterName}: Up={settings.upOffset:F3}, Forward={settings.forwardOffset:F3}");
             
             return settings;
         }
 
-        // Очистка имени для использования в конфиге
         private static string SanitizeConfigKey(string name)
         {
             return name.Replace(" ", "_").Replace(".", "_").Replace("/", "_");
         }
 
-        // === ПОЛУЧЕНИЕ ТЕКУЩИХ НАСТРОЕК ===
         internal static CameraSettings GetCurrentSettings()
         {
             var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
@@ -157,7 +168,6 @@ namespace BeastModeRor2
             return new CameraSettings(CAM_UP_DEFAULT, CAM_FORWARD_DEFAULT);
         }
 
-        // === СОХРАНЕНИЕ НАСТРОЕК В КОНФИГ ===
         internal static void SaveCurrentSettings()
         {
             var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
@@ -177,7 +187,7 @@ namespace BeastModeRor2
             }
         }
 
-        private void SendChatMessage(string message)
+        internal void SendChatMessage(string message)
         {
             Chat.AddMessage($"<color=#FFD700>[BeastMode]</color> {message}");
         }
@@ -192,7 +202,8 @@ namespace BeastModeRor2
             
             playerBody.RecalculateStats();
             
-            SendChatMessage("<color=#FF4444><b>OVERKILL ACTIVATED!</b></color>");
+            SendChatMessage("<color=#FF4444><b>⚡ OVERKILL ACTIVATED! ⚡</b></color>");
+            SendChatMessage("<color=#FF8888>+50% Damage | +20% Speed</color>");
         }
 
         internal void DeactivateOverkill()
@@ -206,12 +217,36 @@ namespace BeastModeRor2
             playerBody.RecalculateStats();
             killsWithoutDamage = 0;
             
-            SendChatMessage("<color=#888888>Overkill deactivated.</color>");
+            SendChatMessage("<color=#888888>Overkill deactivated. Stats normalized.</color>");
+        }
+
+        // === НОВОЕ: СООБЩЕНИЕ О ПРОГРЕССЕ СЕРИИ УБИЙСТВ ===
+        internal void ReportKillStreak()
+        {
+            if (killsWithoutDamage >= OVERKILL_THRESHOLD) return; // Уже активирован
+            
+            string progress = "";
+            string color = "#AAAAAA";
+            
+            if (killsWithoutDamage == 1)
+            {
+                progress = "Kill streak started!";
+                color = "#AAAAAA";
+            }
+            else if (killsWithoutDamage == 2)
+            {
+                progress = $"Kill streak: <b>{killsWithoutDamage}/{OVERKILL_THRESHOLD}</b> - Almost there!";
+                color = "#FFAA00";
+            }
+            
+            if (!string.IsNullOrEmpty(progress))
+            {
+                SendChatMessage($"<color={color}>{progress}</color>");
+            }
         }
 
         public void Update()
         {
-            // === УПРАВЛЕНИЕ FOV ===
             if (Input.GetKeyDown(KeyCode.LeftBracket))
             {
                 ConfigFOV.Value = Mathf.Clamp(ConfigFOV.Value - FOV_STEP, FOV_MIN, FOV_MAX);
@@ -230,48 +265,50 @@ namespace BeastModeRor2
                 SendChatMessage($"FOV reset to <b>{FOV_DEFAULT:F0}</b>");
             }
 
-            // === УПРАВЛЕНИЕ КАМЕРОЙ СТРЕЛКАМИ ===
             if (!string.IsNullOrEmpty(currentCharacterName) && 
                 characterCameraSettings.TryGetValue(currentCharacterName, out CameraSettings settings))
             {
                 float step = Input.GetKey(KeyCode.LeftShift) ? CAM_STEP_FINE : CAM_STEP;
                 bool changed = false;
 
-                // ↑ - увеличить высоту
                 if (Input.GetKeyDown(KeyCode.UpArrow))
                 {
                     settings.upOffset = Mathf.Clamp(settings.upOffset + step, CAM_UP_MIN, CAM_UP_MAX);
                     changed = true;
                 }
                 
-                // ↓ - уменьшить высоту
                 if (Input.GetKeyDown(KeyCode.DownArrow))
                 {
                     settings.upOffset = Mathf.Clamp(settings.upOffset - step, CAM_UP_MIN, CAM_UP_MAX);
                     changed = true;
                 }
                 
-                // → - увеличить смещение вперёд
                 if (Input.GetKeyDown(KeyCode.RightArrow))
                 {
                     settings.forwardOffset = Mathf.Clamp(settings.forwardOffset + step, CAM_FORWARD_MIN, CAM_FORWARD_MAX);
                     changed = true;
                 }
                 
-                // ← - уменьшить смещение вперёд
                 if (Input.GetKeyDown(KeyCode.LeftArrow))
                 {
                     settings.forwardOffset = Mathf.Clamp(settings.forwardOffset - step, CAM_FORWARD_MIN, CAM_FORWARD_MAX);
                     changed = true;
                 }
 
-                // Сброс настроек камеры для текущего персонажа (Delete)
                 if (Input.GetKeyDown(KeyCode.Delete))
                 {
-                    settings.upOffset = CAM_UP_DEFAULT;
-                    settings.forwardOffset = CAM_FORWARD_DEFAULT;
+                    if (DefaultCharacterSettings.TryGetValue(currentCharacterName, out CameraSettings defaults))
+                    {
+                        settings.upOffset = defaults.upOffset;
+                        settings.forwardOffset = defaults.forwardOffset;
+                    }
+                    else
+                    {
+                        settings.upOffset = CAM_UP_DEFAULT;
+                        settings.forwardOffset = CAM_FORWARD_DEFAULT;
+                    }
                     changed = true;
-                    SendChatMessage($"<color=#AAAAAA>{currentCharacterName}</color> camera reset");
+                    SendChatMessage($"<color=#AAAAAA>{currentCharacterName}</color> camera reset to defaults");
                 }
 
                 if (changed)
@@ -286,10 +323,10 @@ namespace BeastModeRor2
                 }
             }
 
-            // === СЛАЙД ===
             if (playerBody == null || !playerBody.isPlayerControlled) return;
 
-            if (Input.GetKeyDown(KeyCode.LeftControl) && !isSliding)
+            // === ИЗМЕНЕНО: СЛАЙД ТЕПЕРЬ НА ALT ===
+            if (Input.GetKeyDown(KeyCode.LeftAlt) && !isSliding)
             {
                 StartSlide();
             }
@@ -318,7 +355,7 @@ namespace BeastModeRor2
                 slideDir.Normalize();
 
                 motor.velocity += slideDir * SLIDE_SPEED;
-                Log.LogInfo("[BeastMode] Slide triggered!");
+                SendChatMessage("<color=#88FFFF>⚡ Slide!</color>");
             }
         }
     }
@@ -335,7 +372,6 @@ namespace BeastModeRor2
                 {
                     plugin.playerBody = __instance;
                     
-                    // Получаем имя персонажа и создаём/загружаем настройки для него
                     string characterName = __instance.baseNameToken;
                     if (string.IsNullOrEmpty(characterName))
                     {
@@ -379,6 +415,11 @@ namespace BeastModeRor2
             {
                 plugin.DeactivateOverkill();
             }
+            else
+            {
+                // === НОВОЕ: СООБЩЕНИЕ О СБРОСЕ СЕРИИ ===
+                plugin.SendChatMessage("<color=#FF6666>❌ Kill streak reset!</color>");
+            }
         }
     }
 
@@ -398,6 +439,9 @@ namespace BeastModeRor2
                 {
                     plugin.killsWithoutDamage++;
                     
+                    // === НОВОЕ: СООБЩЕНИЕ О ПРОГРЕССЕ ===
+                    plugin.ReportKillStreak();
+                    
                     if (plugin.killsWithoutDamage >= BeastModePlugin.OVERKILL_THRESHOLD && !plugin.isOverkillActive)
                     {
                         plugin.ActivateOverkill();
@@ -414,6 +458,7 @@ namespace BeastModeRor2
     {
         private static bool headRenderersDisabled = false;
         private static CharacterBody lastProcessedBody = null;
+        private static bool headFound = false;
 
         static void Postfix(CameraRigController __instance)
         {
@@ -428,27 +473,32 @@ namespace BeastModeRor2
             Transform model = body.modelLocator?.modelTransform;
             if (model == null) return;
 
-            Transform head = FindHeadBone(model);
+            if (lastProcessedBody != body)
+            {
+                headRenderersDisabled = false;
+                headFound = false;
+            }
+
+            Transform head = FindHeadBone(model, body);
             
             var cam = Camera.main;
             if (cam == null) return;
 
-            // Получаем настройки для текущего персонажа
             CameraSettings settings = BeastModePlugin.GetCurrentSettings();
 
             Vector3 headPos;
             
             if (head != null)
             {
+                headFound = true;
                 headPos = head.position 
                         + head.up * settings.upOffset
                         + cam.transform.forward * settings.forwardOffset;
                 
-                if (!headRenderersDisabled || lastProcessedBody != body)
+                if (!headRenderersDisabled)
                 {
                     DisableHeadRenderers(head);
                     headRenderersDisabled = true;
-                    lastProcessedBody = body;
                 }
             }
             else
@@ -459,18 +509,35 @@ namespace BeastModeRor2
                     : body.transform.position + Vector3.up * 1.7f;
             }
             
+            lastProcessedBody = body;
+            
             cam.transform.position = headPos;
             cam.fieldOfView = BeastModePlugin.ConfigFOV.Value;
         }
 
-        private static Transform FindHeadBone(Transform model)
+        private static Transform FindHeadBone(Transform model, CharacterBody body)
         {
+            string characterName = body.baseNameToken;
+
+            string[] characterSpecificPaths = GetCharacterSpecificPaths(characterName);
+            foreach (string path in characterSpecificPaths)
+            {
+                Transform found = model.Find(path);
+                if (found != null)
+                {
+                    BeastModePlugin.Log.LogInfo($"[BeastMode] Found head via specific path '{path}' for {characterName}");
+                    return found;
+                }
+            }
+
             string[] headNames = new string[]
             {
-                "Head", "head",
+                "Head", "head", "HEAD",
                 "Bip001 Head", "Bip001 Head1",
-                "Neck", "neck",
-                "Bip001 Neck"
+                "Neck", "neck", "Neck1",
+                "Bip001 Neck", "Bip001 Neck1",
+                "Helmet", "helmet",
+                "HeadEnd", "head_end"
             };
 
             foreach (string name in headNames)
@@ -479,6 +546,92 @@ namespace BeastModeRor2
                 if (found != null) return found;
             }
             return null;
+        }
+
+        private static string[] GetCharacterSpecificPaths(string characterName)
+        {
+            switch (characterName)
+            {
+                case "MERC_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlMerc/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlMerc/Armature/Hips/Spine/Chest/UpperChest/Neck/Head",
+                        "MercArmature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlMerc/Armature/Hips/Chest/Neck/Head"
+                    };
+                    
+                case "TOOLBOT_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlToolbot/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlToolbot/Armature/Hips/Chest/Head",
+                        "mdlToolbot/Armature/Hips/Spine/Chest/Head",
+                        "mdlToolbot/Armature/Hips/Chest/UpperChest/Head"
+                    };
+                    
+                case "CROCO_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlCroco/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlCroco/Armature/Hips/Spine/Chest/Neck/Head",
+                        "mdlCroco/Armature/Hips/Chest/Neck/Head"
+                    };
+                    
+                case "ENGI_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlEngi/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlEngi/Armature/Hips/Spine/Chest/Neck/Head",
+                        "mdlEngi/Armature/Hips/Chest/Neck/Head",
+                        "mdlEngi/Armature/Hips/Chest/Head"
+                    };
+                    
+                case "BANDIT2_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlBandit2/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlBandit2/Armature/Hips/Spine/Chest/Neck/Head"
+                    };
+                    
+                case "HUNTRESS_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlHuntress/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlHuntress/Armature/Hips/Spine/Chest/Neck/Head"
+                    };
+                    
+                case "COMMANDO_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlCommandoDualies/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlCommandoDualies/Armature/Hips/Spine/Chest/Neck/Head"
+                    };
+                    
+                case "MAGE_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlMage/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlMage/Armature/Hips/Spine/Chest/Neck/Head"
+                    };
+                    
+                case "LOADER_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlLoader/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlLoader/Armature/Hips/Spine/Chest/Neck/Head"
+                    };
+                    
+                case "SEEKER_BODY_NAME":
+                    return new string[]
+                    {
+                        "mdlSeeker/Armature/Hips/Chest/UpperChest/Neck/Head",
+                        "mdlSeeker/Armature/Hips/Spine/Chest/Neck/Head"
+                    };
+                    
+                default:
+                    return new string[0];
+            }
         }
 
         private static Transform FindChildRecursive(Transform parent, string name)
@@ -503,6 +656,8 @@ namespace BeastModeRor2
             {
                 renderer.enabled = false;
             }
+            
+            BeastModePlugin.Log.LogInfo($"[BeastMode] Disabled {renderers.Length} head renderers.");
         }
     }
 }
