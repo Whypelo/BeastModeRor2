@@ -8,51 +8,178 @@ using System.Collections.Generic;
 
 namespace BeastModeRor2
 {
+    // Класс настроек камеры для одного персонажа
+    public class CameraSettings
+    {
+        public float upOffset;
+        public float forwardOffset;
+        
+        public CameraSettings(float up, float forward)
+        {
+            upOffset = up;
+            forwardOffset = forward;
+        }
+    }
+
     [BepInPlugin("com.melty.beastmoderor2", "Beast Mode", "0.1.0")]
     [BepInProcess("Risk of Rain 2.exe")]
     public class BeastModePlugin : BaseUnityPlugin
     {
         internal static ManualLogSource Log;
-        
-        // Настройки из конфига
-        internal static ConfigEntry<float> ConfigFOV;
-        internal static ConfigEntry<float> ConfigForwardOffset;
-        internal static ConfigEntry<float> ConfigUpOffset;
-        
         public const int OVERKILL_THRESHOLD = 3;
         public const float OVERKILL_DAMAGE_MULT = 1.5f;
         public const float OVERKILL_SPEED_MULT = 1.2f;
         public const float SLIDE_SPEED = 20f;
         public const float SLIDE_DURATION = 0.4f;
 
+        // Настройки FOV
+        internal static ConfigEntry<float> ConfigFOV;
+        public const float FOV_MIN = 30f;
+        public const float FOV_MAX = 120f;
+        public const float FOV_STEP = 5f;
+        public const float FOV_DEFAULT = 80f;
+
+        // Настройки камеры
+        public const float CAM_STEP = 0.05f;           // Обычный шаг
+        public const float CAM_STEP_FINE = 0.01f;      // Точный шаг (с Shift)
+        public const float CAM_UP_DEFAULT = 0.05f;
+        public const float CAM_FORWARD_DEFAULT = 0.15f;
+        public const float CAM_UP_MIN = -1f;
+        public const float CAM_UP_MAX = 2f;
+        public const float CAM_FORWARD_MIN = -0.5f;
+        public const float CAM_FORWARD_MAX = 1f;
+
+        // Словарь настроек камеры для каждого персонажа (ключ - имя body)
+        internal static Dictionary<string, CameraSettings> characterCameraSettings = new Dictionary<string, CameraSettings>();
+        
+        // Хранилище конфигов для каждого персонажа (чтобы BepInEx сохранял их)
+        private static Dictionary<string, ConfigEntry<float>> configUpEntries = new Dictionary<string, ConfigEntry<float>>();
+        private static Dictionary<string, ConfigEntry<float>> configForwardEntries = new Dictionary<string, ConfigEntry<float>>();
+
         internal int killsWithoutDamage = 0;
         internal bool isOverkillActive = false;
         private float slideTimer = 0f;
         private bool isSliding = false;
         internal CharacterBody playerBody;
+        internal string currentCharacterName = "";
 
         public void Awake()
         {
             Log = Logger;
             Log.LogInfo("[BeastMode] Initializing...");
             
-            // Инициализация настроек из конфига
-            ConfigFOV = Config.Bind<float>("Camera", "FieldOfView", 90f, 
-                new ConfigDescription("Поле зрения камеры (FOV). Стандартное значение 90.", 
-                new AcceptableValueRange<float>(30f, 120f)));
-            
-            ConfigForwardOffset = Config.Bind<float>("Camera", "ForwardOffset", 0.15f, 
-                new ConfigDescription("Смещение камеры вперёд от головы (чтобы не видеть тело).", 
-                new AcceptableValueRange<float>(0f, 1f)));
-            
-            ConfigUpOffset = Config.Bind<float>("Camera", "UpOffset", 0.05f, 
-                new ConfigDescription("Смещение камеры вверх от головы.", 
-                new AcceptableValueRange<float>(-0.5f, 0.5f)));
+            ConfigFOV = Config.Bind<float>(
+                "Camera", 
+                "FieldOfView", 
+                FOV_DEFAULT,
+                new ConfigDescription(
+                    "Поле зрения камеры (FOV). Меняется в игре клавишами [ и ].",
+                    new AcceptableValueRange<float>(FOV_MIN, FOV_MAX)
+                )
+            );
             
             var harmony = new Harmony("com.melty.beastmoderor2");
             harmony.PatchAll();
 
-            Log.LogInfo("[BeastMode] Beast Mode loaded successfully.");
+            Log.LogInfo($"[BeastMode] Beast Mode loaded. FOV: {ConfigFOV.Value}");
+        }
+
+        // === ПОЛУЧЕНИЕ ИЛИ СОЗДАНИЕ НАСТРОЕК ДЛЯ ПЕРСОНАЖА ===
+        internal static CameraSettings GetOrCreateSettings(string characterName, ConfigFile configFile)
+        {
+            if (characterCameraSettings.TryGetValue(characterName, out CameraSettings existing))
+            {
+                return existing;
+            }
+
+            // Создаём новые настройки
+            CameraSettings settings = new CameraSettings(CAM_UP_DEFAULT, CAM_FORWARD_DEFAULT);
+
+            // Пытаемся загрузить из конфига
+            string safeName = SanitizeConfigKey(characterName);
+            
+            if (!configUpEntries.TryGetValue(safeName, out ConfigEntry<float> upEntry))
+            {
+                upEntry = configFile.Bind<float>(
+                    $"Character.{safeName}",
+                    "UpOffset",
+                    CAM_UP_DEFAULT,
+                    new ConfigDescription(
+                        $"Смещение камеры вверх для персонажа {characterName}. Стрелки ↑↓ в игре.",
+                        new AcceptableValueRange<float>(CAM_UP_MIN, CAM_UP_MAX)
+                    )
+                );
+                configUpEntries[safeName] = upEntry;
+            }
+
+            if (!configForwardEntries.TryGetValue(safeName, out ConfigEntry<float> forwardEntry))
+            {
+                forwardEntry = configFile.Bind<float>(
+                    $"Character.{safeName}",
+                    "ForwardOffset",
+                    CAM_FORWARD_DEFAULT,
+                    new ConfigDescription(
+                        $"Смещение камеры вперёд для персонажа {characterName}. Стрелки ←→ в игре.",
+                        new AcceptableValueRange<float>(CAM_FORWARD_MIN, CAM_FORWARD_MAX)
+                    )
+                );
+                configForwardEntries[safeName] = forwardEntry;
+            }
+
+            settings.upOffset = upEntry.Value;
+            settings.forwardOffset = forwardEntry.Value;
+
+            characterCameraSettings[characterName] = settings;
+            Log.LogInfo($"[BeastMode] Created camera settings for {characterName}: Up={settings.upOffset}, Forward={settings.forwardOffset}");
+            
+            return settings;
+        }
+
+        // Очистка имени для использования в конфиге
+        private static string SanitizeConfigKey(string name)
+        {
+            return name.Replace(" ", "_").Replace(".", "_").Replace("/", "_");
+        }
+
+        // === ПОЛУЧЕНИЕ ТЕКУЩИХ НАСТРОЕК ===
+        internal static CameraSettings GetCurrentSettings()
+        {
+            var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
+            if (plugin == null || string.IsNullOrEmpty(plugin.currentCharacterName))
+            {
+                return new CameraSettings(CAM_UP_DEFAULT, CAM_FORWARD_DEFAULT);
+            }
+            
+            if (characterCameraSettings.TryGetValue(plugin.currentCharacterName, out CameraSettings settings))
+            {
+                return settings;
+            }
+            return new CameraSettings(CAM_UP_DEFAULT, CAM_FORWARD_DEFAULT);
+        }
+
+        // === СОХРАНЕНИЕ НАСТРОЕК В КОНФИГ ===
+        internal static void SaveCurrentSettings()
+        {
+            var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
+            if (plugin == null || string.IsNullOrEmpty(plugin.currentCharacterName)) return;
+            
+            if (!characterCameraSettings.TryGetValue(plugin.currentCharacterName, out CameraSettings settings)) return;
+            
+            string safeName = SanitizeConfigKey(plugin.currentCharacterName);
+            
+            if (configUpEntries.TryGetValue(safeName, out ConfigEntry<float> upEntry))
+            {
+                upEntry.Value = settings.upOffset;
+            }
+            if (configForwardEntries.TryGetValue(safeName, out ConfigEntry<float> forwardEntry))
+            {
+                forwardEntry.Value = settings.forwardOffset;
+            }
+        }
+
+        private void SendChatMessage(string message)
+        {
+            Chat.AddMessage($"<color=#FFD700>[BeastMode]</color> {message}");
         }
 
         internal void ActivateOverkill()
@@ -65,7 +192,7 @@ namespace BeastModeRor2
             
             playerBody.RecalculateStats();
             
-            Log.LogInfo($"[BeastMode] OVERKILL ACTIVATED! Damage x{OVERKILL_DAMAGE_MULT}, Speed x{OVERKILL_SPEED_MULT}");
+            SendChatMessage("<color=#FF4444><b>OVERKILL ACTIVATED!</b></color>");
         }
 
         internal void DeactivateOverkill()
@@ -78,11 +205,88 @@ namespace BeastModeRor2
             
             playerBody.RecalculateStats();
             killsWithoutDamage = 0;
-            Log.LogInfo("[BeastMode] Overkill deactivated. Stats normalized.");
+            
+            SendChatMessage("<color=#888888>Overkill deactivated.</color>");
         }
 
         public void Update()
         {
+            // === УПРАВЛЕНИЕ FOV ===
+            if (Input.GetKeyDown(KeyCode.LeftBracket))
+            {
+                ConfigFOV.Value = Mathf.Clamp(ConfigFOV.Value - FOV_STEP, FOV_MIN, FOV_MAX);
+                SendChatMessage($"FOV: <b>{ConfigFOV.Value:F0}</b>");
+            }
+            
+            if (Input.GetKeyDown(KeyCode.RightBracket))
+            {
+                ConfigFOV.Value = Mathf.Clamp(ConfigFOV.Value + FOV_STEP, FOV_MIN, FOV_MAX);
+                SendChatMessage($"FOV: <b>{ConfigFOV.Value:F0}</b>");
+            }
+            
+            if (Input.GetKeyDown(KeyCode.Backspace))
+            {
+                ConfigFOV.Value = FOV_DEFAULT;
+                SendChatMessage($"FOV reset to <b>{FOV_DEFAULT:F0}</b>");
+            }
+
+            // === УПРАВЛЕНИЕ КАМЕРОЙ СТРЕЛКАМИ ===
+            if (!string.IsNullOrEmpty(currentCharacterName) && 
+                characterCameraSettings.TryGetValue(currentCharacterName, out CameraSettings settings))
+            {
+                float step = Input.GetKey(KeyCode.LeftShift) ? CAM_STEP_FINE : CAM_STEP;
+                bool changed = false;
+
+                // ↑ - увеличить высоту
+                if (Input.GetKeyDown(KeyCode.UpArrow))
+                {
+                    settings.upOffset = Mathf.Clamp(settings.upOffset + step, CAM_UP_MIN, CAM_UP_MAX);
+                    changed = true;
+                }
+                
+                // ↓ - уменьшить высоту
+                if (Input.GetKeyDown(KeyCode.DownArrow))
+                {
+                    settings.upOffset = Mathf.Clamp(settings.upOffset - step, CAM_UP_MIN, CAM_UP_MAX);
+                    changed = true;
+                }
+                
+                // → - увеличить смещение вперёд
+                if (Input.GetKeyDown(KeyCode.RightArrow))
+                {
+                    settings.forwardOffset = Mathf.Clamp(settings.forwardOffset + step, CAM_FORWARD_MIN, CAM_FORWARD_MAX);
+                    changed = true;
+                }
+                
+                // ← - уменьшить смещение вперёд
+                if (Input.GetKeyDown(KeyCode.LeftArrow))
+                {
+                    settings.forwardOffset = Mathf.Clamp(settings.forwardOffset - step, CAM_FORWARD_MIN, CAM_FORWARD_MAX);
+                    changed = true;
+                }
+
+                // Сброс настроек камеры для текущего персонажа (Delete)
+                if (Input.GetKeyDown(KeyCode.Delete))
+                {
+                    settings.upOffset = CAM_UP_DEFAULT;
+                    settings.forwardOffset = CAM_FORWARD_DEFAULT;
+                    changed = true;
+                    SendChatMessage($"<color=#AAAAAA>{currentCharacterName}</color> camera reset");
+                }
+
+                if (changed)
+                {
+                    SendChatMessage(
+                        $"<color=#AAAAAA>{currentCharacterName}</color>  " +
+                        $"Up: <b>{settings.upOffset:F2}</b>  |  " +
+                        $"Fwd: <b>{settings.forwardOffset:F2}</b>" +
+                        (Input.GetKey(KeyCode.LeftShift) ? "  <color=#88FFFF>[fine]</color>" : "")
+                    );
+                    SaveCurrentSettings();
+                }
+            }
+
+            // === СЛАЙД ===
             if (playerBody == null || !playerBody.isPlayerControlled) return;
 
             if (Input.GetKeyDown(KeyCode.LeftControl) && !isSliding)
@@ -130,35 +334,42 @@ namespace BeastModeRor2
                 if (plugin != null)
                 {
                     plugin.playerBody = __instance;
-                    BeastModePlugin.Log.LogInfo("[BeastMode] Player body attached.");
+                    
+                    // Получаем имя персонажа и создаём/загружаем настройки для него
+                    string characterName = __instance.baseNameToken;
+                    if (string.IsNullOrEmpty(characterName))
+                    {
+                        characterName = __instance.name;
+                    }
+                    
+                    plugin.currentCharacterName = characterName;
+                    BeastModePlugin.GetOrCreateSettings(characterName, plugin.Config);
+                    
+                    BeastModePlugin.Log.LogInfo($"[BeastMode] Player body attached: {characterName}");
+                    Chat.AddMessage($"<color=#FFD700>[BeastMode]</color> Playing as <color=#AAAAAA>{characterName}</color>");
                 }
             }
         }
     }
 
-    // Словарь для хранения последнего атакующего для каждого HealthComponent
     public static class LastAttackerTracker
     {
         public static Dictionary<HealthComponent, GameObject> LastAttackers = new Dictionary<HealthComponent, GameObject>();
     }
 
-    // Патч получения урона - сохраняем информацию об атакующем
     [HarmonyPatch(typeof(HealthComponent), "TakeDamage")]
     public static class HealthComponentTakeDamagePatch
     {
-        // ИСПРАВЛЕНО: параметр теперь называется damageInfo, а не info
         static void Postfix(HealthComponent __instance, DamageInfo damageInfo)
         {
             var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
             if (plugin == null || plugin.playerBody == null) return;
             
-            // Сохраняем информацию об атакующем для этого HealthComponent
             if (damageInfo.attacker != null)
             {
                 LastAttackerTracker.LastAttackers[__instance] = damageInfo.attacker;
             }
             
-            // Проверяем, что урон получен именно игроком
             if (__instance.body != plugin.playerBody) return;
             if (damageInfo.damage <= 0 || damageInfo.attacker == __instance.gameObject) return;
 
@@ -171,7 +382,6 @@ namespace BeastModeRor2
         }
     }
 
-    // Патч смерти - используем сохраненную информацию об атакующем
     [HarmonyPatch(typeof(HealthComponent), "Die")]
     public static class HealthComponentDiePatch
     {
@@ -180,17 +390,13 @@ namespace BeastModeRor2
             var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
             if (plugin == null || plugin.playerBody == null) return;
             
-            // Игнорируем смерть самого игрока
             if (__instance.body != null && __instance.body.isPlayerControlled) return;
             
-            // Получаем сохраненного атакующего
             if (LastAttackerTracker.LastAttackers.TryGetValue(__instance, out GameObject attacker))
             {
-                // Проверяем, что убийца - это именно игрок
                 if (attacker == plugin.playerBody.gameObject)
                 {
                     plugin.killsWithoutDamage++;
-                    BeastModePlugin.Log.LogInfo($"[BeastMode] Kill streak: {plugin.killsWithoutDamage}/{BeastModePlugin.OVERKILL_THRESHOLD}");
                     
                     if (plugin.killsWithoutDamage >= BeastModePlugin.OVERKILL_THRESHOLD && !plugin.isOverkillActive)
                     {
@@ -198,7 +404,6 @@ namespace BeastModeRor2
                     }
                 }
                 
-                // Очищаем запись после использования
                 LastAttackerTracker.LastAttackers.Remove(__instance);
             }
         }
@@ -209,7 +414,6 @@ namespace BeastModeRor2
     {
         private static bool headRenderersDisabled = false;
         private static CharacterBody lastProcessedBody = null;
-        private static Transform disabledHeadTransform = null;
 
         static void Postfix(CameraRigController __instance)
         {
@@ -224,69 +428,39 @@ namespace BeastModeRor2
             Transform model = body.modelLocator?.modelTransform;
             if (model == null) return;
 
-            // Ищем голову или шею
             Transform head = FindHeadBone(model);
             
+            var cam = Camera.main;
+            if (cam == null) return;
+
+            // Получаем настройки для текущего персонажа
+            CameraSettings settings = BeastModePlugin.GetCurrentSettings();
+
             Vector3 headPos;
             
             if (head != null)
             {
-                // Позиция головы + смещение вверх + смещение вперёд по направлению взгляда
                 headPos = head.position 
-                        + head.up * BeastModePlugin.ConfigUpOffset.Value
-                        + body.inputBank.aimDirection.normalized * BeastModePlugin.ConfigForwardOffset.Value;
+                        + head.up * settings.upOffset
+                        + cam.transform.forward * settings.forwardOffset;
                 
-                // === КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: поворачиваем модель в направлении взгляда ===
-                // Это нужно, чтобы когда игрок стоит на месте и крутит мышкой,
-                // модель тоже поворачивалась и не было видно внутренностей.
-                RotateModelToCamera(body, model);
-                
-                // Отключаем рендереры головы один раз при смене персонажа
                 if (!headRenderersDisabled || lastProcessedBody != body)
                 {
                     DisableHeadRenderers(head);
                     headRenderersDisabled = true;
                     lastProcessedBody = body;
-                    disabledHeadTransform = head;
                 }
             }
             else
             {
-                // Fallback: используем центр персонажа + высота глаз
                 Transform core = body.coreTransform;
                 headPos = core != null 
                     ? core.position + Vector3.up * 1.7f 
                     : body.transform.position + Vector3.up * 1.7f;
-                
-                RotateModelToCamera(body, model);
             }
             
-            var cam = Camera.main;
-            if (cam != null)
-            {
-                cam.transform.position = headPos;
-                cam.transform.rotation = Quaternion.LookRotation(body.inputBank.aimDirection, Vector3.up);
-                
-                // Применяем FOV из конфига
-                cam.fieldOfView = BeastModePlugin.ConfigFOV.Value;
-            }
-        }
-
-        // Поворот модели персонажа в направлении взгляда камеры
-        private static void RotateModelToCamera(CharacterBody body, Transform model)
-        {
-            if (body.inputBank == null) return;
-            
-            Vector3 aimDir = body.inputBank.aimDirection;
-            // Игнорируем вертикальную составляющую - модель должна стоять ровно
-            aimDir.y = 0f;
-            if (aimDir.sqrMagnitude < 0.001f) return;
-            
-            // Создаём кватернион поворота только вокруг оси Y
-            Quaternion targetRotation = Quaternion.LookRotation(aimDir, Vector3.up);
-            
-            // Плавно поворачиваем модель (чтобы не было резких дёрганий)
-            model.rotation = Quaternion.Slerp(model.rotation, targetRotation, Time.deltaTime * 15f);
+            cam.transform.position = headPos;
+            cam.fieldOfView = BeastModePlugin.ConfigFOV.Value;
         }
 
         private static Transform FindHeadBone(Transform model)
@@ -329,26 +503,6 @@ namespace BeastModeRor2
             {
                 renderer.enabled = false;
             }
-            
-            // Дополнительно отключаем рендереры на всём торсе, если они видны
-            // Ищем кость груди/туловища
-            Transform chest = FindChildRecursive(head.parent != null ? head.parent : head, "Chest");
-            if (chest == null) chest = FindChildRecursive(head.parent != null ? head.parent : head, "Spine");
-            
-            if (chest != null)
-            {
-                Renderer[] chestRenderers = chest.GetComponentsInChildren<Renderer>();
-                foreach (Renderer renderer in chestRenderers)
-                {
-                    // Отключаем только те, что находятся очень близко к голове
-                    if (Vector3.Distance(renderer.transform.position, head.position) < 0.5f)
-                    {
-                        renderer.enabled = false;
-                    }
-                }
-            }
-            
-            BeastModePlugin.Log.LogInfo($"[BeastMode] Disabled head renderers.");
         }
     }
 }
