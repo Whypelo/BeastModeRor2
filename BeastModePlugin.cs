@@ -298,12 +298,18 @@ namespace BeastModeRor2
                 motor.velocity += slideDir * SLIDE_SPEED;
                 SendChatMessage("<color=#88FFFF>⚡ Slide!</color>");
                 
-                // === НОВОЕ: ЗАПУСК АНИМАЦИИ СЛАЙДА ===
                 PlaySlideAnimation();
             }
         }
 
-        // === НОВОЕ: ВОСПРОИЗВЕДЕНИЕ АНИМАЦИИ СЛАЙДА ===
+        // === ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ СОВМЕСТИМОСТИ С .NET FRAMEWORK 4.7.2 ===
+        private static bool ContainsIgnoreCase(string source, string value)
+        {
+            if (source == null || value == null) return false;
+            return source.IndexOf(value, System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // === ВОСПРОИЗВЕДЕНИЕ АНИМАЦИИ СЛАЙДА ===
         private void PlaySlideAnimation()
         {
             if (playerBody == null) return;
@@ -317,36 +323,147 @@ namespace BeastModeRor2
                 animator = modelTransform.GetComponentInChildren<Animator>();
             }
             
-            if (animator != null)
+            if (animator == null)
             {
-                // Пробуем разные имена анимаций слайда
-                string[] slideAnimNames = new string[]
+                Log.LogWarning($"[BeastMode] No Animator found for {currentCharacterName}");
+                return;
+            }
+
+            LogAllAnimations(animator);
+
+            string[] slideAnimNames = new string[]
+            {
+                "SlideForward",
+                "CommandoArmature|SlideForward",
+                "mdlCommandoDualies|SlideForward",
+                "TacticalDive",
+                "TacticalSlide",
+                "Slide",
+                "Dive",
+                "CombatDive",
+                "Roll"
+            };
+
+            foreach (string animName in slideAnimNames)
+            {
+                if (TryPlayAnimation(animator, animName))
                 {
-                    "Slide",
-                    "slide",
-                    "Dodge",
-                    "dodge",
-                    "Roll",
-                    "roll",
-                    "DodgeForward",
-                    "Evade"
-                };
-                
-                foreach (string animName in slideAnimNames)
+                    Log.LogInfo($"[BeastMode] Successfully played slide animation '{animName}' for {currentCharacterName}");
+                    return;
+                }
+            }
+
+            if (animator.runtimeAnimatorController != null)
+            {
+                foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
                 {
-                    // Проверяем, существует ли такая анимация
-                    foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
+                    if (ContainsIgnoreCase(clip.name, "Slide") ||
+                        ContainsIgnoreCase(clip.name, "Dive") ||
+                        ContainsIgnoreCase(clip.name, "Roll"))
                     {
-                        if (clip.name == animName)
-                        {
-                            animator.Play(animName);
-                            Log.LogInfo($"[BeastMode] Playing slide animation: {animName}");
-                            return;
-                        }
+                        animator.Play(clip.name, 0, 0f);
+                        Log.LogInfo($"[BeastMode] Played partial match animation '{clip.name}' for {currentCharacterName}");
+                        return;
                     }
                 }
+            }
+
+            string[] fallbackAnims = new string[]
+            {
+                "Dodge", "Dash", "Blink", "Evade", "Jump", "Fall"
+            };
+
+            foreach (string animName in fallbackAnims)
+            {
+                if (TryPlayAnimation(animator, animName))
+                {
+                    Log.LogInfo($"[BeastMode] Played fallback animation '{animName}' for {currentCharacterName}");
+                    return;
+                }
+            }
+
+            string[] triggers = new string[] { "Slide", "SlideForward", "TacticalDive", "Dodge", "Dash" };
+            foreach (string triggerName in triggers)
+            {
+                if (TrySetTrigger(animator, triggerName))
+                {
+                    Log.LogInfo($"[BeastMode] Triggered '{triggerName}' for {currentCharacterName}");
+                    return;
+                }
+            }
+
+            Log.LogWarning($"[BeastMode] No suitable slide animation found for {currentCharacterName}. Check Log.txt for available animations.");
+        }
+
+        private bool TryPlayAnimation(Animator animator, string animName)
+        {
+            if (animator.runtimeAnimatorController == null) return false;
+            
+            foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
+            {
+                if (clip.name.Equals(animName, System.StringComparison.OrdinalIgnoreCase) ||
+                    clip.name.EndsWith("|" + animName, System.StringComparison.OrdinalIgnoreCase) ||
+                    ContainsIgnoreCase(clip.name, animName))
+                {
+                    animator.Play(clip.name, 0, 0f);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private bool TrySetTrigger(Animator animator, string triggerName)
+        {
+            foreach (AnimatorControllerParameter param in animator.parameters)
+            {
+                if (param.type == AnimatorControllerParameterType.Trigger && 
+                    param.name.Equals(triggerName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    animator.SetTrigger(param.name);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static HashSet<string> loggedCharacters = new HashSet<string>();
+        private void LogAllAnimations(Animator animator)
+        {
+            if (loggedCharacters.Contains(currentCharacterName)) return;
+            loggedCharacters.Add(currentCharacterName);
+
+            Log.LogInfo($"[BeastMode] === Available animations for {currentCharacterName} ===");
+            
+            if (animator.runtimeAnimatorController == null)
+            {
+                Log.LogInfo($"  [No Animator Controller found]");
+                return;
+            }
+
+            int count = 0;
+            int slideCount = 0;
+            foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
+            {
+                Log.LogInfo($"  - {clip.name} (length: {clip.length:F2}s)");
+                count++;
                 
-                Log.LogWarning($"[BeastMode] No slide animation found for {currentCharacterName}");
+                if (ContainsIgnoreCase(clip.name, "Slide") ||
+                    ContainsIgnoreCase(clip.name, "Dive") ||
+                    ContainsIgnoreCase(clip.name, "Roll"))
+                {
+                    slideCount++;
+                }
+            }
+            
+            Log.LogInfo($"[BeastMode] Total animations: {count}, Slide-related: {slideCount}");
+            
+            Log.LogInfo($"[BeastMode] === Available triggers for {currentCharacterName} ===");
+            foreach (AnimatorControllerParameter param in animator.parameters)
+            {
+                if (param.type == AnimatorControllerParameterType.Trigger)
+                {
+                    Log.LogInfo($"  - Trigger: {param.name}");
+                }
             }
         }
     }
