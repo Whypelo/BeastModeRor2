@@ -309,33 +309,46 @@ namespace BeastModeRor2
             return source.IndexOf(value, System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        // === ВОСПРОИЗВЕДЕНИЕ АНИМАЦИИ СЛАЙДА ===
+                // === ВОСПРОИЗВЕДЕНИЕ АНИМАЦИИ СЛАЙДА ===
         private void PlaySlideAnimation()
         {
             if (playerBody == null) return;
             
+            // === ВАЖНО: В RoR2 используем CharacterModel.mainAnimator ===
+            // === ПОИСК ANIMATOR НАПРЯМУЮ НА МОДЕЛИ ===
             Transform modelTransform = playerBody.modelLocator?.modelTransform;
-            if (modelTransform == null) return;
-            
-            Animator animator = modelTransform.GetComponent<Animator>();
-            if (animator == null)
+            if (modelTransform == null)
             {
-                animator = modelTransform.GetComponentInChildren<Animator>();
+                Log.LogWarning($"[BeastMode] No modelTransform found for {currentCharacterName}");
+                return;
             }
             
-            if (animator == null)
+            Animator mainAnimator = modelTransform.GetComponent<Animator>();
+            if (mainAnimator == null)
+            {
+                mainAnimator = modelTransform.GetComponentInChildren<Animator>();
+            }
+            
+            if (mainAnimator == null)
+            {
+                Log.LogWarning($"[BeastMode] No Animator found for {currentCharacterName}");
+                return;
+            }
+            
+            Log.LogInfo($"[BeastMode] Found Animator on {mainAnimator.gameObject.name} for {currentCharacterName}");
+            
+            if (mainAnimator == null)
             {
                 Log.LogWarning($"[BeastMode] No Animator found for {currentCharacterName}");
                 return;
             }
 
-            LogAllAnimations(animator);
+            LogAllAnimations(mainAnimator);
 
+            // === СПИСОК ИМЕН АНИМАЦИИ СЛАЙДА ===
             string[] slideAnimNames = new string[]
             {
                 "SlideForward",
-                "CommandoArmature|SlideForward",
-                "mdlCommandoDualies|SlideForward",
                 "TacticalDive",
                 "TacticalSlide",
                 "Slide",
@@ -344,30 +357,45 @@ namespace BeastModeRor2
                 "Roll"
             };
 
+            // === ПОПЫТКА 1: CrossFade (самый надёжный способ в RoR2) ===
             foreach (string animName in slideAnimNames)
             {
-                if (TryPlayAnimation(animator, animName))
+                if (TryCrossFadeAnimation(mainAnimator, animName))
                 {
-                    Log.LogInfo($"[BeastMode] Successfully played slide animation '{animName}' for {currentCharacterName}");
+                    Log.LogInfo($"[BeastMode] Successfully cross-faded slide animation '{animName}' for {currentCharacterName}");
                     return;
                 }
             }
 
-            if (animator.runtimeAnimatorController != null)
+            // === ПОПЫТКА 2: Поиск по частичному совпадению + CrossFade ===
+            if (mainAnimator.runtimeAnimatorController != null)
             {
-                foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
+                foreach (AnimationClip clip in mainAnimator.runtimeAnimatorController.animationClips)
                 {
                     if (ContainsIgnoreCase(clip.name, "Slide") ||
                         ContainsIgnoreCase(clip.name, "Dive") ||
                         ContainsIgnoreCase(clip.name, "Roll"))
                     {
-                        animator.Play(clip.name, 0, 0f);
-                        Log.LogInfo($"[BeastMode] Played partial match animation '{clip.name}' for {currentCharacterName}");
+                        // Используем ТОЧНОЕ имя клипа для CrossFade
+                        mainAnimator.CrossFade(clip.name, 0.05f, 0, 0f);
+                        mainAnimator.Update(0f); // Принудительное обновление
+                        Log.LogInfo($"[BeastMode] Cross-faded partial match animation '{clip.name}' for {currentCharacterName}");
                         return;
                     }
                 }
             }
 
+            // === ПОПЫТКА 3: Прямое воспроизведение через Play с обновлением ===
+            foreach (string animName in slideAnimNames)
+            {
+                if (TryPlayAnimationWithUpdate(mainAnimator, animName))
+                {
+                    Log.LogInfo($"[BeastMode] Played with update '{animName}' for {currentCharacterName}");
+                    return;
+                }
+            }
+
+            // === ПОПЫТКА 4: Fallback анимации ===
             string[] fallbackAnims = new string[]
             {
                 "Dodge", "Dash", "Blink", "Evade", "Jump", "Fall"
@@ -375,17 +403,18 @@ namespace BeastModeRor2
 
             foreach (string animName in fallbackAnims)
             {
-                if (TryPlayAnimation(animator, animName))
+                if (TryCrossFadeAnimation(mainAnimator, animName))
                 {
-                    Log.LogInfo($"[BeastMode] Played fallback animation '{animName}' for {currentCharacterName}");
+                    Log.LogInfo($"[BeastMode] Cross-faded fallback animation '{animName}' for {currentCharacterName}");
                     return;
                 }
             }
 
+            // === ПОПЫТКА 5: Триггеры ===
             string[] triggers = new string[] { "Slide", "SlideForward", "TacticalDive", "Dodge", "Dash" };
             foreach (string triggerName in triggers)
             {
-                if (TrySetTrigger(animator, triggerName))
+                if (TrySetTrigger(mainAnimator, triggerName))
                 {
                     Log.LogInfo($"[BeastMode] Triggered '{triggerName}' for {currentCharacterName}");
                     return;
@@ -395,7 +424,8 @@ namespace BeastModeRor2
             Log.LogWarning($"[BeastMode] No suitable slide animation found for {currentCharacterName}. Check Log.txt for available animations.");
         }
 
-        private bool TryPlayAnimation(Animator animator, string animName)
+        // === НОВЫЙ МЕТОД: CrossFade (правильный способ для RoR2) ===
+        private bool TryCrossFadeAnimation(Animator animator, string animName)
         {
             if (animator.runtimeAnimatorController == null) return false;
             
@@ -405,11 +435,40 @@ namespace BeastModeRor2
                     clip.name.EndsWith("|" + animName, System.StringComparison.OrdinalIgnoreCase) ||
                     ContainsIgnoreCase(clip.name, animName))
                 {
-                    animator.Play(clip.name, 0, 0f);
+                    // CrossFade с быстрым переходом (0.05 сек)
+                    animator.CrossFade(clip.name, 0.05f, 0, 0f);
+                    // Принудительное обновление animator для немедленного эффекта
+                    animator.Update(0f);
                     return true;
                 }
             }
             return false;
+        }
+
+        // === НОВЫЙ МЕТОД: Play с принудительным обновлением ===
+        private bool TryPlayAnimationWithUpdate(Animator animator, string animName)
+        {
+            if (animator.runtimeAnimatorController == null) return false;
+            
+            foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
+            {
+                if (clip.name.Equals(animName, System.StringComparison.OrdinalIgnoreCase) ||
+                    clip.name.EndsWith("|" + animName, System.StringComparison.OrdinalIgnoreCase) ||
+                    ContainsIgnoreCase(clip.name, animName))
+                {
+                    // Play с layer 0 и normalized time 0
+                    animator.Play(clip.name, 0, 0f);
+                    animator.Update(0f); // Принудительное обновление
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Старый метод TryPlayAnimation (оставляем для совместимости)
+        private bool TryPlayAnimation(Animator animator, string animName)
+        {
+            return TryPlayAnimationWithUpdate(animator, animName);
         }
 
         private bool TrySetTrigger(Animator animator, string triggerName)
@@ -464,6 +523,14 @@ namespace BeastModeRor2
                 {
                     Log.LogInfo($"  - Trigger: {param.name}");
                 }
+            }
+            
+            // === НОВОЕ: Логируем текущее состояние Animator ===
+            Log.LogInfo($"[BeastMode] Animator layerCount: {animator.layerCount}, parameterCount: {animator.parameterCount}");
+            if (animator.layerCount > 0)
+            {
+                var stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+                Log.LogInfo($"[BeastMode] Current state: {stateInfo.fullPathHash} (name: {stateInfo.fullPathHash})");
             }
         }
     }
