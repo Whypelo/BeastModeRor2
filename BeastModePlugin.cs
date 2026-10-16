@@ -3,6 +3,7 @@ using BepInEx.Logging;
 using RoR2;
 using UnityEngine;
 using HarmonyLib;
+using System.Collections.Generic;
 
 namespace BeastModeRor2
 {
@@ -34,16 +35,14 @@ namespace BeastModeRor2
             Log.LogInfo("[BeastMode] Beast Mode loaded successfully.");
         }
 
-                internal void ActivateOverkill()
+        internal void ActivateOverkill()
         {
             if (playerBody == null) return;
             isOverkillActive = true;
             
-            // Изменяем базовые значения статов
             playerBody.baseDamage *= OVERKILL_DAMAGE_MULT;
             playerBody.baseMoveSpeed *= OVERKILL_SPEED_MULT;
             
-            // Заставляем игру пересчитать итоговые характеристики
             playerBody.RecalculateStats();
             
             Log.LogInfo($"[BeastMode] OVERKILL ACTIVATED! Damage x{OVERKILL_DAMAGE_MULT}, Speed x{OVERKILL_SPEED_MULT}");
@@ -54,7 +53,6 @@ namespace BeastModeRor2
             if (!isOverkillActive || playerBody == null) return;
             isOverkillActive = false;
             
-            // Возвращаем базовые значения к исходным (делим на тот же множитель)
             playerBody.baseDamage /= OVERKILL_DAMAGE_MULT;
             playerBody.baseMoveSpeed /= OVERKILL_SPEED_MULT;
             
@@ -101,7 +99,6 @@ namespace BeastModeRor2
         }
     }
 
-    // 1. ИСПРАВЛЕНО: Привязка к CharacterBody при его создании/спавне
     [HarmonyPatch(typeof(CharacterBody), "Start")]
     public static class CharacterBodyStartPatch
     {
@@ -119,34 +116,14 @@ namespace BeastModeRor2
         }
     }
 
-    // 2. ИСПРАВЛЕНО: Патч теперь на HealthComponent.Die, а не CharacterBody.OnDeath
-    [HarmonyPatch(typeof(HealthComponent), nameof(HealthComponent.Die))]
-    public static class HealthComponentDiePatch
+    // Словарь для хранения последнего атакующего для каждого HealthComponent
+    public static class LastAttackerTracker
     {
-        static void Postfix(HealthComponent __instance, DamageReport damageReport)
-        {
-            var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
-            if (plugin == null || plugin.playerBody == null) return;
-            
-            // Игнорируем смерть самого игрока
-            if (__instance.body != null && __instance.body.isPlayerControlled) return;
-            
-            // Проверяем, что убийца - это именно игрок (а не турель, падение или другой игрок)
-            if (damageReport.attacker != null && damageReport.attacker == plugin.playerBody.gameObject)
-            {
-                plugin.killsWithoutDamage++;
-                BeastModePlugin.Log.LogInfo($"[BeastMode] Kill streak: {plugin.killsWithoutDamage}/{BeastModePlugin.OVERKILL_THRESHOLD}");
-                
-                if (plugin.killsWithoutDamage >= BeastModePlugin.OVERKILL_THRESHOLD && !plugin.isOverkillActive)
-                {
-                    plugin.ActivateOverkill();
-                }
-            }
-        }
+        public static Dictionary<HealthComponent, GameObject> LastAttackers = new Dictionary<HealthComponent, GameObject>();
     }
 
-    // 3. Патч получения урона игроком (сброс серии)
-    [HarmonyPatch(typeof(HealthComponent), nameof(HealthComponent.TakeDamage))]
+    // Патч получения урона - сохраняем информацию об атакующем
+    [HarmonyPatch(typeof(HealthComponent), "TakeDamage")]
     public static class HealthComponentTakeDamagePatch
     {
         static void Postfix(HealthComponent __instance, DamageInfo info)
@@ -154,10 +131,14 @@ namespace BeastModeRor2
             var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
             if (plugin == null || plugin.playerBody == null) return;
             
+            // Сохраняем информацию об атакующем для этого HealthComponent
+            if (info.attacker != null)
+            {
+                LastAttackerTracker.LastAttackers[__instance] = info.attacker;
+            }
+            
             // Проверяем, что урон получен именно игроком
             if (__instance.body != plugin.playerBody) return;
-            
-            // Игнорируем нулевой урон или урон от самого себя (например, от своих же снарядов, если такое будет)
             if (info.damage <= 0 || info.attacker == __instance.gameObject) return;
 
             plugin.killsWithoutDamage = 0;
@@ -169,7 +150,39 @@ namespace BeastModeRor2
         }
     }
 
-    // 4. Камера от первого лица
+    // Патч смерти - используем сохраненную информацию об атакующем
+    [HarmonyPatch(typeof(HealthComponent), "Die")]
+    public static class HealthComponentDiePatch
+    {
+        static void Postfix(HealthComponent __instance, bool noCorpse)
+        {
+            var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
+            if (plugin == null || plugin.playerBody == null) return;
+            
+            // Игнорируем смерть самого игрока
+            if (__instance.body != null && __instance.body.isPlayerControlled) return;
+            
+            // Получаем сохраненного атакующего
+            if (LastAttackerTracker.LastAttackers.TryGetValue(__instance, out GameObject attacker))
+            {
+                // Проверяем, что убийца - это именно игрок
+                if (attacker == plugin.playerBody.gameObject)
+                {
+                    plugin.killsWithoutDamage++;
+                    BeastModePlugin.Log.LogInfo($"[BeastMode] Kill streak: {plugin.killsWithoutDamage}/{BeastModePlugin.OVERKILL_THRESHOLD}");
+                    
+                    if (plugin.killsWithoutDamage >= BeastModePlugin.OVERKILL_THRESHOLD && !plugin.isOverkillActive)
+                    {
+                        plugin.ActivateOverkill();
+                    }
+                }
+                
+                // Очищаем запись после использования
+                LastAttackerTracker.LastAttackers.Remove(__instance);
+            }
+        }
+    }
+
     [HarmonyPatch(typeof(CameraRigController), "Update")]
     public static class FirstPersonCameraPatch
     {
@@ -193,7 +206,6 @@ namespace BeastModeRor2
             if (cam != null)
             {
                 cam.transform.position = headPos;
-                // Если управление мышкой будет ломаться, закомментируйте строку ниже:
                 cam.transform.rotation = Quaternion.LookRotation(body.inputBank.aimDirection, Vector3.up);
             }
         }
