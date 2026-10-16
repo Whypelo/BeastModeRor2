@@ -126,20 +126,21 @@ namespace BeastModeRor2
     [HarmonyPatch(typeof(HealthComponent), "TakeDamage")]
     public static class HealthComponentTakeDamagePatch
     {
-        static void Postfix(HealthComponent __instance, DamageInfo info)
+        // ИСПРАВЛЕНО: параметр теперь называется damageInfo, а не info
+        static void Postfix(HealthComponent __instance, DamageInfo damageInfo)
         {
             var plugin = BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent<BeastModePlugin>();
             if (plugin == null || plugin.playerBody == null) return;
             
             // Сохраняем информацию об атакующем для этого HealthComponent
-            if (info.attacker != null)
+            if (damageInfo.attacker != null)
             {
-                LastAttackerTracker.LastAttackers[__instance] = info.attacker;
+                LastAttackerTracker.LastAttackers[__instance] = damageInfo.attacker;
             }
             
             // Проверяем, что урон получен именно игроком
             if (__instance.body != plugin.playerBody) return;
-            if (info.damage <= 0 || info.attacker == __instance.gameObject) return;
+            if (damageInfo.damage <= 0 || damageInfo.attacker == __instance.gameObject) return;
 
             plugin.killsWithoutDamage = 0;
             
@@ -183,7 +184,7 @@ namespace BeastModeRor2
         }
     }
 
-    [HarmonyPatch(typeof(CameraRigController), "Update")]
+        [HarmonyPatch(typeof(CameraRigController), "LateUpdate")]
     public static class FirstPersonCameraPatch
     {
         static void Postfix(CameraRigController __instance)
