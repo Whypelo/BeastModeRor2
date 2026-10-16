@@ -184,7 +184,7 @@ namespace BeastModeRor2
         }
     }
 
-        [HarmonyPatch(typeof(CameraRigController), "LateUpdate")]
+    [HarmonyPatch(typeof(CameraRigController), "LateUpdate")]
     public static class FirstPersonCameraPatch
     {
         static void Postfix(CameraRigController __instance)
@@ -197,16 +197,44 @@ namespace BeastModeRor2
             var body = targetObj.GetComponent<CharacterBody>();
             if (body == null || !body.isPlayerControlled) return;
 
-            Transform model = body.modelLocator?.modelTransform;
-            if (model == null) return;
+            // Используем coreTransform как базу (это центр персонажа)
+            Transform core = body.coreTransform;
+            if (core == null) return;
 
-            Transform head = model.Find("Head") ?? model.Find("Chest") ?? model;
-            Vector3 headPos = head.position + head.up * 0.15f + head.forward * 0.05f;
+            // Пытаемся найти голову через модель
+            Transform model = body.modelLocator?.modelTransform;
+            Transform head = null;
+            
+            if (model != null)
+            {
+                // Ищем различные варианты костей головы
+                head = model.Find("Head") 
+                    ?? model.Find("head") 
+                    ?? model.Find("Bip001 Head")
+                    ?? model.Find("Bip001 Head1")
+                    ?? model.Find("Chest")
+                    ?? model.Find("chest");
+            }
+
+            Vector3 headPos;
+            
+            if (head != null)
+            {
+                // Если нашли голову, используем её позицию с небольшим смещением
+                headPos = head.position + Vector3.up * 0.3f + head.forward * 0.1f;
+            }
+            else
+            {
+                // Если голову не нашли, используем core с фиксированным смещением вверх
+                // 1.7f - примерная высота глаз от центра персонажа
+                headPos = core.position + Vector3.up * 0.5f;
+            }
             
             var cam = Camera.main;
             if (cam != null)
             {
                 cam.transform.position = headPos;
+                // Используем направление прицеливания игрока для вращения камеры
                 cam.transform.rotation = Quaternion.LookRotation(body.inputBank.aimDirection, Vector3.up);
             }
         }
